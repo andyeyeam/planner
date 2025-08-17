@@ -17,6 +17,7 @@ function createMonthsList() {
   
   // Get people data from People sheet (A = name, B = birth date)
   var peopleData = [];
+  var peopleNames = []; // Track names to prevent duplicates
   var peopleLastRow = peopleSheet.getLastRow();
   if (peopleLastRow >= 2) {
     var peopleRange = peopleSheet.getRange('A2:B' + peopleLastRow).getValues();
@@ -24,11 +25,16 @@ function createMonthsList() {
       var name = peopleRange[i][0];
       var birthDate = peopleRange[i][1];
       
-      if (name && name.toString().trim() !== '') {
-        peopleData.push({
-          name: name.toString(),
-          birthDate: new Date(birthDate)
-        });
+      if (name && name.toString().trim() !== '' && birthDate) {
+        var cleanName = name.toString().trim();
+        // Check if name already exists to prevent duplicates
+        if (peopleNames.indexOf(cleanName) === -1) {
+          peopleData.push({
+            name: cleanName,
+            birthDate: new Date(birthDate)
+          });
+          peopleNames.push(cleanName);
+        }
       }
     }
   }
