@@ -15,15 +15,17 @@ function createMonthsList() {
     return;
   }
   
-  // Get people data from People sheet (A = name, B = birth date)
+  // Get people data from People sheet (A = name, B = birth date, E = last month of income)
   var peopleData = [];
   var peopleNames = []; // Track names to prevent duplicates
+  var latestLastMonthOfIncome = null; // Track the latest "Last Month of Income" date
   var peopleLastRow = peopleSheet.getLastRow();
   if (peopleLastRow >= 2) {
-    var peopleRange = peopleSheet.getRange('A2:B' + peopleLastRow).getValues();
+    var peopleRange = peopleSheet.getRange('A2:E' + peopleLastRow).getValues();
     for (var i = 0; i < peopleRange.length; i++) {
       var name = peopleRange[i][0];
       var birthDate = peopleRange[i][1];
+      var lastMonthOfIncome = peopleRange[i][4]; // Column E is index 4
       
       if (name && name.toString().trim() !== '' && birthDate) {
         var cleanName = name.toString().trim();
@@ -31,9 +33,18 @@ function createMonthsList() {
         if (peopleNames.indexOf(cleanName) === -1) {
           peopleData.push({
             name: cleanName,
-            birthDate: new Date(birthDate)
+            birthDate: new Date(birthDate),
+            lastMonthOfIncome: lastMonthOfIncome ? new Date(lastMonthOfIncome) : null
           });
           peopleNames.push(cleanName);
+          
+          // Track the latest "Last Month of Income" date
+          if (lastMonthOfIncome) {
+            var incomeDate = new Date(lastMonthOfIncome);
+            if (!latestLastMonthOfIncome || incomeDate > latestLastMonthOfIncome) {
+              latestLastMonthOfIncome = incomeDate;
+            }
+          }
         }
       }
     }
@@ -104,6 +115,7 @@ function createMonthsList() {
   
   var monthlyStocksGrowthRate = stocksGrowthRate / 12; // Convert annual to monthly
   var monthlyCashGrowthRate = cashGrowthRate / 12; // Convert annual to monthly
+  var monthlyInflationRate = annualInflationRate / 12; // Convert annual to monthly
   
   
   // Get Stocks and Shares sheet to find current values
@@ -190,6 +202,22 @@ function createMonthsList() {
     }
   }
   
+  // Get Retirement Income sheet to find Annual Income property
+  var retirementIncomeSheet = ss.getSheetByName('Retirement Income');
+  var annualIncomeValue = 0;
+  if (retirementIncomeSheet) {
+    // Search for Annual Income property in Retirement Income sheet
+    var retirementIncomeData = retirementIncomeSheet.getRange('A:B').getValues();
+    for (var i = 0; i < retirementIncomeData.length; i++) {
+      if (retirementIncomeData[i][0]) {
+        var propertyName = retirementIncomeData[i][0].toString().toLowerCase();
+        if (propertyName.includes('annual income')) {
+          annualIncomeValue = retirementIncomeData[i][1] || 0;
+          break;
+        }
+      }
+    }
+  }
 
   // Get Occasional Income sheet data
   var occasionalIncomeSheet = ss.getSheetByName('Occasional Income');
@@ -251,6 +279,7 @@ function createMonthsList() {
     if (date.getMonth() === 3 && monthIndex > 0) { // April is month 3 (0-indexed)
       currentStatePensionValue = Math.round((currentStatePensionValue * (1 + annualInflationRate)) * 100) / 100;
     }
+    
     
     // Create row array starting with basic data
     var rowData = [];
@@ -368,6 +397,10 @@ function createMonthsList() {
   incomeSheet.getRange('A1').setValue('Month');
   var incomeColIndex = 2;
   
+  // Add From Assets column header to Income sheet
+  incomeSheet.getRange(1, incomeColIndex).setValue('From Assets');
+  incomeColIndex++;
+  
   // Add pension column headers to Income sheet
   for (var p = 0; p < pensionData.length; p++) {
     incomeSheet.getRange(1, incomeColIndex).setValue(pensionData[p].title);
@@ -392,7 +425,7 @@ function createMonthsList() {
   forecastHeaderRange.setWrap(true);
   
   // Format header row for Income sheet 
-  var incomeColumns = 1 + pensionData.length + peopleData.length; // Month + Pensions + State Pensions
+  var incomeColumns = 1 + 1 + pensionData.length + peopleData.length; // Month + From Assets + Pensions + State Pensions
   var incomeHeaderRange = incomeSheet.getRange(1, 1, 1, incomeColumns);
   incomeHeaderRange.setFontWeight('bold');
   incomeHeaderRange.setFontSize(12);
@@ -409,7 +442,8 @@ function createMonthsList() {
   
   // Set column widths for Income sheet
   incomeSheet.setColumnWidth(1, 150); // Month column
-  var incomeColIndex = 2;
+  incomeSheet.setColumnWidth(2, 150); // From Assets column
+  var incomeColIndex = 3;
   
   // Set column widths for pension columns in Income sheet
   for (var p = 0; p < pensionData.length; p++) {
@@ -431,7 +465,7 @@ function createMonthsList() {
   
   // Clear existing data (except headers) for both sheets
   var forecastColumns = 4;
-  var incomeColumns = 1 + pensionData.length + peopleData.length; // Month + Pensions + State Pensions
+  var incomeColumns = 1 + 1 + pensionData.length + peopleData.length; // Month + From Assets + Pensions + State Pensions
   
   if (forecastSheet.getLastRow() > 1) {
     forecastSheet.getRange(2, 1, forecastSheet.getLastRow() - 1, forecastColumns).clearContent();
@@ -457,8 +491,41 @@ function createMonthsList() {
       }
       forecastSheetData.push(forecastRow);
       
-      // Income sheet data: Month + pension columns + state pension columns
+      // Income sheet data: Month + From Assets + pension columns + state pension columns
       var incomeRow = [row[0]]; // Start with month
+      
+      // Calculate From Assets value for this specific month
+      // First calculate the underlying growth value (regardless of whether it will be shown)
+      var underlyingFromAssetsValue;
+      if (i === 0) {
+        underlyingFromAssetsValue = annualIncomeValue; // First month equals exact Annual Income
+      } else {
+        // Calculate value based on first month plus accumulated monthly inflation
+        underlyingFromAssetsValue = annualIncomeValue * Math.pow(1 + monthlyInflationRate, i);
+        underlyingFromAssetsValue = Math.round(underlyingFromAssetsValue * 100) / 100; // Round to 2 decimal places
+      }
+      
+      // Now check if this month should show zero due to Last Month of Income restriction
+      var fromAssetsValue;
+      if (latestLastMonthOfIncome) {
+        // Compare year and month only (ignore day)
+        var forecastYear = date.getFullYear();
+        var forecastMonth = date.getMonth();
+        var latestIncomeYear = latestLastMonthOfIncome.getFullYear();
+        var latestIncomeMonth = latestLastMonthOfIncome.getMonth();
+        
+        // If forecast month/year is <= latest income month/year, force to zero
+        if (forecastYear < latestIncomeYear || (forecastYear === latestIncomeYear && forecastMonth <= latestIncomeMonth)) {
+          fromAssetsValue = 0; // Force to zero for months before or equal to latest Last Month of Income
+        } else {
+          fromAssetsValue = underlyingFromAssetsValue; // Use calculated value for months after
+        }
+      } else {
+        // If no Last Month of Income data found, use calculated value for all months
+        fromAssetsValue = underlyingFromAssetsValue;
+      }
+      
+      incomeRow.push(fromAssetsValue);
       
       // Add pension values (columns 4+ in original data)
       for (var p = 0; p < pensionData.length; p++) {
