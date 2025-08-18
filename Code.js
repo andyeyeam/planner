@@ -190,6 +190,7 @@ function createMonthsList() {
     }
   }
   
+
   // Get Occasional Income sheet data
   var occasionalIncomeSheet = ss.getSheetByName('Occasional Income');
   if (!occasionalIncomeSheet) {
@@ -271,8 +272,7 @@ function createMonthsList() {
     if (monthIndex === 0) {
       currentTaxFree += monthlyTaxFreeContributions;
       currentTaxable += monthlyTaxableContributions;
-      var stocksTotal = Math.round((currentTaxFree + currentTaxable) * 100) / 100;
-      rowData = [monthStr, currentTaxFree, currentTaxable, stocksTotal, currentCash];
+      rowData = [monthStr, currentTaxFree, currentTaxable, currentCash];
     } else {
       // Apply monthly growth to previous month's values
       currentTaxFree = Math.round((currentTaxFree * (1 + monthlyStocksGrowthRate)) * 100) / 100;
@@ -283,8 +283,7 @@ function createMonthsList() {
       currentTaxFree += monthlyTaxFreeContributions;
       currentTaxable += monthlyTaxableContributions;
       
-      var stocksTotal = Math.round((currentTaxFree + currentTaxable) * 100) / 100;
-      rowData = [monthStr, currentTaxFree, currentTaxable, stocksTotal, currentCash];
+      rowData = [monthStr, currentTaxFree, currentTaxable, currentCash];
     }
     
     // Add pension values for this month
@@ -302,17 +301,29 @@ function createMonthsList() {
       }
     }
     
-    // Add occasional income for this month
+    // Add occasional income to cash for this month
     var occasionalIncomeValue = 0;
+    var occasionalIncomeTitles = [];
     for (var o = 0; o < occasionalIncomeData.length; o++) {
       var occasionalIncome = occasionalIncomeData[o];
       // Check if the month matches (year and month only, ignore day)
       if (date.getFullYear() === occasionalIncome.month.getFullYear() && 
           date.getMonth() === occasionalIncome.month.getMonth()) {
         occasionalIncomeValue += occasionalIncome.value;
+        occasionalIncomeTitles.push(occasionalIncome.title);
       }
     }
-    rowData.push(occasionalIncomeValue);
+    
+    // Add occasional income to cash value
+    var totalCashForMonth = Math.round((currentCash + occasionalIncomeValue) * 100) / 100;
+    
+    // Update rowData to include cash with occasional income
+    rowData[3] = totalCashForMonth; // Cash is now in position 3 (column D)
+    
+    // Store occasional income info for this row to add comments later
+    if (occasionalIncomeValue > 0) {
+      rowData.occasionalIncomeComment = occasionalIncomeTitles.join(', ');
+    }
     
     // Add state pension values for each person
     for (var sp = 0; sp < peopleData.length; sp++) {
@@ -335,88 +346,156 @@ function createMonthsList() {
     monthIndex++;
   }
   
-  // Get or create Forecast sheet
-  var forecastSheet = ss.getSheetByName('Forecast');
+  // Get or create Capital sheet (formerly Forecast)
+  var forecastSheet = ss.getSheetByName('Capital');
   if (!forecastSheet) {
-    forecastSheet = ss.insertSheet('Forecast');
+    forecastSheet = ss.insertSheet('Capital');
   }
   
-  // Set headers
+  // Get or create Income sheet
+  var incomeSheet = ss.getSheetByName('Income');
+  if (!incomeSheet) {
+    incomeSheet = ss.insertSheet('Income');
+  }
+  
+  // Set headers for Capital sheet (only non-income columns)
   forecastSheet.getRange('A1').setValue('Month');
   forecastSheet.getRange('B1').setValue('Stocks & Shares Tax Free');
   forecastSheet.getRange('C1').setValue('Stocks & Shares Taxable');
-  forecastSheet.getRange('D1').setValue('Stocks & Shares Total');
-  forecastSheet.getRange('E1').setValue('Cash');
+  forecastSheet.getRange('D1').setValue('Cash');
   
-  // Add pension column headers
+  // Set headers for Income sheet
+  incomeSheet.getRange('A1').setValue('Month');
+  var incomeColIndex = 2;
+  
+  // Add pension column headers to Income sheet
   for (var p = 0; p < pensionData.length; p++) {
-    var colIndex = 6 + p; // Start from column F (6)
-    forecastSheet.getRange(1, colIndex).setValue(pensionData[p].title);
+    incomeSheet.getRange(1, incomeColIndex).setValue(pensionData[p].title);
+    incomeColIndex++;
   }
   
-  // Add Occasional Income column header
-  var occasionalIncomeColIndex = 6 + pensionData.length;
-  forecastSheet.getRange(1, occasionalIncomeColIndex).setValue('Occasional Income');
-  
-  // Add State Pension column headers for each person
+  // Add State Pension column headers for each person to Income sheet
   for (var sp = 0; sp < peopleData.length; sp++) {
-    var statePensionColIndex = 7 + pensionData.length + sp;
     var headerTitle = peopleData[sp].name + ' State Pension';
-    forecastSheet.getRange(1, statePensionColIndex).setValue(headerTitle);
+    incomeSheet.getRange(1, incomeColIndex).setValue(headerTitle);
+    incomeColIndex++;
   }
   
-  // Format header row as title (including all columns)
-  var totalColumns = 6 + pensionData.length + peopleData.length; // +1 for occasional income + state pensions
-  var headerRange = forecastSheet.getRange(1, 1, 1, totalColumns);
-  headerRange.setFontWeight('bold');
-  headerRange.setFontSize(12);
-  headerRange.setBackground('#4a90e2');
-  headerRange.setFontColor('white');
-  headerRange.setHorizontalAlignment('center');
-  headerRange.setWrap(true);
+  // Format header row for Capital sheet (only 4 columns now)
+  var forecastColumns = 4;
+  var forecastHeaderRange = forecastSheet.getRange(1, 1, 1, forecastColumns);
+  forecastHeaderRange.setFontWeight('bold');
+  forecastHeaderRange.setFontSize(12);
+  forecastHeaderRange.setBackground('#4a90e2');
+  forecastHeaderRange.setFontColor('white');
+  forecastHeaderRange.setHorizontalAlignment('center');
+  forecastHeaderRange.setWrap(true);
   
-  // Set column widths for better formatting
+  // Format header row for Income sheet 
+  var incomeColumns = 1 + pensionData.length + peopleData.length; // Month + Pensions + State Pensions
+  var incomeHeaderRange = incomeSheet.getRange(1, 1, 1, incomeColumns);
+  incomeHeaderRange.setFontWeight('bold');
+  incomeHeaderRange.setFontSize(12);
+  incomeHeaderRange.setBackground('#4a90e2');
+  incomeHeaderRange.setFontColor('white');
+  incomeHeaderRange.setHorizontalAlignment('center');
+  incomeHeaderRange.setWrap(true);
+  
+  // Set column widths for Capital sheet
   forecastSheet.setColumnWidth(1, 150); // Month column
   forecastSheet.setColumnWidth(2, 200); // Stocks & Shares Tax Free column  
   forecastSheet.setColumnWidth(3, 200); // Stocks & Shares Taxable column
-  forecastSheet.setColumnWidth(4, 200); // Stocks & Shares Total column
-  forecastSheet.setColumnWidth(5, 150); // Cash column
+  forecastSheet.setColumnWidth(4, 150); // Cash column (now includes occasional income)
   
-  // Set column widths for pension columns
+  // Set column widths for Income sheet
+  incomeSheet.setColumnWidth(1, 150); // Month column
+  var incomeColIndex = 2;
+  
+  // Set column widths for pension columns in Income sheet
   for (var p = 0; p < pensionData.length; p++) {
-    var colIndex = 6 + p;
-    forecastSheet.setColumnWidth(colIndex, 150); // Pension columns
+    incomeSheet.setColumnWidth(incomeColIndex, 150); // Pension columns
+    incomeColIndex++;
   }
   
-  // Set column width for Occasional Income column
-  forecastSheet.setColumnWidth(occasionalIncomeColIndex, 150);
-  
-  // Set column widths for State Pension columns
+  // Set column widths for State Pension columns in Income sheet
   for (var sp = 0; sp < peopleData.length; sp++) {
-    var statePensionColIndex = 7 + pensionData.length + sp;
-    forecastSheet.setColumnWidth(statePensionColIndex, 150); // State Pension columns
+    incomeSheet.setColumnWidth(incomeColIndex, 150); // State Pension columns
+    incomeColIndex++;
   }
   
-  // Freeze row 1 and column 1
+  // Freeze row 1 and column 1 for both sheets
   forecastSheet.setFrozenRows(1);
   forecastSheet.setFrozenColumns(1);
+  incomeSheet.setFrozenRows(1);
+  incomeSheet.setFrozenColumns(1);
   
-  // Clear existing data (except headers)
-  var totalColumns = 6 + pensionData.length + peopleData.length; // +1 for occasional income + state pensions
+  // Clear existing data (except headers) for both sheets
+  var forecastColumns = 4;
+  var incomeColumns = 1 + pensionData.length + peopleData.length; // Month + Pensions + State Pensions
+  
   if (forecastSheet.getLastRow() > 1) {
-    forecastSheet.getRange(2, 1, forecastSheet.getLastRow() - 1, totalColumns).clearContent();
+    forecastSheet.getRange(2, 1, forecastSheet.getLastRow() - 1, forecastColumns).clearContent();
+  }
+  
+  if (incomeSheet.getLastRow() > 1) {
+    incomeSheet.getRange(2, 1, incomeSheet.getLastRow() - 1, incomeColumns).clearContent();
   }
   
   // Write forecast data starting from row 2
   if (forecastData.length > 0) {
-    forecastSheet.getRange(2, 1, forecastData.length, totalColumns).setValues(forecastData);
+    // Prepare separate data arrays for Forecast and Income sheets
+    var forecastSheetData = [];
+    var incomeSheetData = [];
     
-    // Format currency columns (columns B, C, D, E, all pension columns, occasional income, and state pensions)
-    var currencyColumns = 5 + pensionData.length + peopleData.length; // B, C, D, E, pension columns + occasional income + state pensions
-    forecastSheet.getRange(2, 2, forecastData.length, currencyColumns).setNumberFormat('£#,##0.00');
+    for (var i = 0; i < forecastData.length; i++) {
+      var row = forecastData[i];
+      
+      // Capital sheet data: Month, Tax Free, Taxable, Cash (first 4 columns)
+      var forecastRow = [row[0], row[1], row[2], row[3]];
+      if (row.occasionalIncomeComment) {
+        forecastRow.occasionalIncomeComment = row.occasionalIncomeComment;
+      }
+      forecastSheetData.push(forecastRow);
+      
+      // Income sheet data: Month + pension columns + state pension columns
+      var incomeRow = [row[0]]; // Start with month
+      
+      // Add pension values (columns 4+ in original data)
+      for (var p = 0; p < pensionData.length; p++) {
+        incomeRow.push(row[4 + p]);
+      }
+      
+      // Add state pension values 
+      for (var sp = 0; sp < peopleData.length; sp++) {
+        incomeRow.push(row[4 + pensionData.length + sp]);
+      }
+      
+      incomeSheetData.push(incomeRow);
+    }
     
-    // Center align all data columns from B onwards
-    forecastSheet.getRange(2, 2, forecastData.length, currencyColumns).setHorizontalAlignment('center');
+    // Write data to Capital sheet
+    forecastSheet.getRange(2, 1, forecastSheetData.length, forecastColumns).setValues(forecastSheetData);
+    
+    // Write data to Income sheet
+    incomeSheet.getRange(2, 1, incomeSheetData.length, incomeColumns).setValues(incomeSheetData);
+    
+    // Add comments to Cash column cells that have occasional income
+    for (var i = 0; i < forecastSheetData.length; i++) {
+      if (forecastSheetData[i].occasionalIncomeComment) {
+        var cashCell = forecastSheet.getRange(i + 2, 4); // Row i+2 (since we start from row 2), column 4 (Cash column)
+        cashCell.setNote(forecastSheetData[i].occasionalIncomeComment);
+      }
+    }
+    
+    // Format currency columns for Capital sheet (columns B, C, D)
+    forecastSheet.getRange(2, 2, forecastSheetData.length, 3).setNumberFormat('£#,##0.00');
+    forecastSheet.getRange(2, 2, forecastSheetData.length, 3).setHorizontalAlignment('center');
+    
+    // Format currency columns for Income sheet (all columns except Month)
+    if (incomeColumns > 1) {
+      incomeSheet.getRange(2, 2, incomeSheetData.length, incomeColumns - 1).setNumberFormat('£#,##0.00');
+      incomeSheet.getRange(2, 2, incomeSheetData.length, incomeColumns - 1).setHorizontalAlignment('center');
+    }
   }
   
   // Show completion message
