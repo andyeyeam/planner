@@ -506,7 +506,7 @@ function createMonthsList() {
       }
       
       // Now check if this month should show zero due to Last Month of Income restriction
-      var fromAssetsValue;
+      var originalFromAssetsValue;
       if (latestLastMonthOfIncome) {
         // Compare year and month only (ignore day)
         var forecastYear = date.getFullYear();
@@ -516,16 +516,40 @@ function createMonthsList() {
         
         // If forecast month/year is <= latest income month/year, force to zero
         if (forecastYear < latestIncomeYear || (forecastYear === latestIncomeYear && forecastMonth <= latestIncomeMonth)) {
-          fromAssetsValue = 0; // Force to zero for months before or equal to latest Last Month of Income
+          originalFromAssetsValue = 0; // Force to zero for months before or equal to latest Last Month of Income
         } else {
-          fromAssetsValue = underlyingFromAssetsValue; // Use calculated value for months after
+          originalFromAssetsValue = underlyingFromAssetsValue; // Use calculated value for months after
         }
       } else {
         // If no Last Month of Income data found, use calculated value for all months
-        fromAssetsValue = underlyingFromAssetsValue;
+        originalFromAssetsValue = underlyingFromAssetsValue;
       }
       
-      incomeRow.push(fromAssetsValue);
+      // Calculate sum of all other income sources for this month
+      var otherIncomeSum = 0;
+      
+      // Add pension values and calculate their sum
+      for (var p = 0; p < pensionData.length; p++) {
+        var pensionValue = row[4 + p];
+        otherIncomeSum += pensionValue;
+      }
+      
+      // Add state pension values and calculate their sum
+      for (var sp = 0; sp < peopleData.length; sp++) {
+        var statePensionValue = row[4 + pensionData.length + sp];
+        otherIncomeSum += statePensionValue;
+      }
+      
+      // Calculate adjusted From Assets value (original - sum of other income sources)
+      var adjustedFromAssetsValue = originalFromAssetsValue - otherIncomeSum;
+      // Ensure it doesn't go below zero
+      if (adjustedFromAssetsValue < 0) {
+        adjustedFromAssetsValue = 0;
+      }
+      adjustedFromAssetsValue = Math.round(adjustedFromAssetsValue * 100) / 100; // Round to 2 decimal places
+      
+      // Add the adjusted From Assets value to the row
+      incomeRow.push(adjustedFromAssetsValue);
       
       // Add pension values (columns 4+ in original data)
       for (var p = 0; p < pensionData.length; p++) {
