@@ -125,8 +125,8 @@ function createMonthsList() {
     return;
   }
   
-  // Get current values from Stocks and Shares table - now including columns D and E
-  var stocksData = stocksSharesSheet.getRange('A2:E' + stocksSharesSheet.getLastRow()).getValues();
+  // Get current values from Stocks and Shares table - now including columns D, E and F
+  var stocksData = stocksSharesSheet.getRange('A2:F' + stocksSharesSheet.getLastRow()).getValues();
   
   // Calculate total current tax-free and taxable values, and collect contribution data
   var totalTaxFree = 0;
@@ -135,10 +135,11 @@ function createMonthsList() {
   
   for (var i = 0; i < stocksData.length; i++) {
     var title = stocksData[i][0];
-    var taxFreeValue = stocksData[i][1] || 0;
-    var taxableValue = stocksData[i][2] || 0;
-    var monthlyContribution = stocksData[i][3] || 0;
-    var lastMonth = stocksData[i][4];
+    var currentValue = stocksData[i][1] || 0;  // Column B
+    var taxFreeValue = stocksData[i][2] || 0;  // Column C - Tax Free
+    var taxableValue = stocksData[i][3] || 0;  // Column D - Taxable
+    var monthlyContribution = stocksData[i][4] || 0;  // Column E
+    var lastMonth = stocksData[i][5];  // Column F
     
     if (title && title.toString().trim() !== '') {
       totalTaxFree += Number(taxFreeValue);
@@ -250,24 +251,9 @@ function createMonthsList() {
   var currentDate = new Date();
   var startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
   
-  // Create array of forecast data
+  // Create array of forecast data with just months
   var forecastData = [];
   var date = new Date(startDate);
-  var monthIndex = 0;
-  
-  // Track current values for growth calculation
-  var currentTaxFree = totalTaxFree;
-  var currentTaxable = totalTaxable;
-  var currentCash = totalCash;
-  
-  // Track current pension values for growth calculation
-  var currentPensionValues = [];
-  for (var p = 0; p < pensionData.length; p++) {
-    currentPensionValues.push(pensionData[p].monthlyIncome);
-  }
-  
-  // Track current state pension value for inflation adjustment
-  var currentStatePensionValue = currentStatePension;
   
   while (date <= endDate) {
     // Format as "Month Year" (e.g., "August 2025")
@@ -275,104 +261,13 @@ function createMonthsList() {
                      "July", "August", "September", "October", "November", "December"];
     var monthStr = monthNames[date.getMonth()] + " " + date.getFullYear();
     
-    // Apply annual inflation to state pension in April
-    if (date.getMonth() === 3 && monthIndex > 0) { // April is month 3 (0-indexed)
-      currentStatePensionValue = Math.round((currentStatePensionValue * (1 + annualInflationRate)) * 100) / 100;
-    }
-    
-    
-    // Create row array starting with basic data
-    var rowData = [];
-    
-    // Calculate monthly contributions for this month
-    var monthlyTaxFreeContributions = 0;
-    var monthlyTaxableContributions = 0;
-    
-    for (var c = 0; c < contributionData.length; c++) {
-      var contribution = contributionData[c];
-      // Check if contribution end month is >= current forecast month
-      if (contribution.lastMonth >= date) {
-        monthlyTaxFreeContributions += contribution.monthlyTaxFree;
-        monthlyTaxableContributions += contribution.monthlyTaxable;
-      }
-    }
-    
-    // For first month, use starting values; for others, apply growth to previous month
-    if (monthIndex === 0) {
-      currentTaxFree += monthlyTaxFreeContributions;
-      currentTaxable += monthlyTaxableContributions;
-      rowData = [monthStr, currentTaxFree, currentTaxable, currentCash];
-    } else {
-      // Apply monthly growth to previous month's values
-      currentTaxFree = Math.round((currentTaxFree * (1 + monthlyStocksGrowthRate)) * 100) / 100;
-      currentTaxable = Math.round((currentTaxable * (1 + monthlyStocksGrowthRate)) * 100) / 100;
-      currentCash = Math.round((currentCash * (1 + monthlyCashGrowthRate)) * 100) / 100;
-      
-      // Add monthly contributions after growth
-      currentTaxFree += monthlyTaxFreeContributions;
-      currentTaxable += monthlyTaxableContributions;
-      
-      rowData = [monthStr, currentTaxFree, currentTaxable, currentCash];
-    }
-    
-    // Add pension values for this month
-    for (var p = 0; p < pensionData.length; p++) {
-      var pension = pensionData[p];
-      // Check if current forecast month is >= pension start month
-      if (date >= pension.firstMonth) {
-        // Apply growth to pension values for months after the first
-        if (monthIndex > 0) {
-          currentPensionValues[p] = Math.round((currentPensionValues[p] * (1 + monthlyCashGrowthRate)) * 100) / 100;
-        }
-        rowData.push(currentPensionValues[p]);
-      } else {
-        rowData.push(0); // No pension payment yet
-      }
-    }
-    
-    // Add occasional income to cash for this month
-    var occasionalIncomeValue = 0;
-    var occasionalIncomeTitles = [];
-    for (var o = 0; o < occasionalIncomeData.length; o++) {
-      var occasionalIncome = occasionalIncomeData[o];
-      // Check if the month matches (year and month only, ignore day)
-      if (date.getFullYear() === occasionalIncome.month.getFullYear() && 
-          date.getMonth() === occasionalIncome.month.getMonth()) {
-        occasionalIncomeValue += occasionalIncome.value;
-        occasionalIncomeTitles.push(occasionalIncome.title);
-      }
-    }
-    
-    // Add occasional income to cash value
-    var totalCashForMonth = Math.round((currentCash + occasionalIncomeValue) * 100) / 100;
-    
-    // Update rowData to include cash with occasional income
-    rowData[3] = totalCashForMonth; // Cash is now in position 3 (column D)
-    
-    // Store occasional income info for this row to add comments later
-    if (occasionalIncomeValue > 0) {
-      rowData.occasionalIncomeComment = occasionalIncomeTitles.join(', ') + ' (£' + occasionalIncomeValue.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ')';
-    }
-    
-    // Add state pension values for each person
-    for (var sp = 0; sp < peopleData.length; sp++) {
-      var person = peopleData[sp];
-      // Calculate 67th birthday
-      var statePensionAge = new Date(person.birthDate.getFullYear() + 67, person.birthDate.getMonth(), person.birthDate.getDate());
-      
-      // Check if current forecast month is >= state pension age
-      if (date >= statePensionAge) {
-        rowData.push(currentStatePensionValue);
-      } else {
-        rowData.push(0); // No state pension payment yet
-      }
-    }
+    // Create row with just month data - all other values will be empty
+    var rowData = [monthStr];
     
     forecastData.push(rowData);
     
     // Move to next month
     date.setMonth(date.getMonth() + 1);
-    monthIndex++;
   }
   
   // Get or create Capital sheet (formerly Forecast)
@@ -468,125 +363,100 @@ function createMonthsList() {
   var incomeColumns = 1 + 1 + pensionData.length + peopleData.length; // Month + From Assets + Pensions + State Pensions
   
   if (forecastSheet.getLastRow() > 1) {
-    forecastSheet.getRange(2, 1, forecastSheet.getLastRow() - 1, forecastColumns).clearContent();
+    var forecastClearRange = forecastSheet.getRange(2, 1, forecastSheet.getLastRow() - 1, forecastColumns);
+    forecastClearRange.clearContent();
+    forecastClearRange.clearNote();
   }
   
   if (incomeSheet.getLastRow() > 1) {
-    incomeSheet.getRange(2, 1, incomeSheet.getLastRow() - 1, incomeColumns).clearContent();
+    var incomeClearRange = incomeSheet.getRange(2, 1, incomeSheet.getLastRow() - 1, incomeColumns);
+    incomeClearRange.clearContent();
+    incomeClearRange.clearNote();
   }
   
   // Write forecast data starting from row 2
   if (forecastData.length > 0) {
-    // Prepare separate data arrays for Forecast and Income sheets
+    // Prepare separate data arrays for Capital and Income sheets - just months
     var forecastSheetData = [];
     var incomeSheetData = [];
     
     for (var i = 0; i < forecastData.length; i++) {
       var row = forecastData[i];
       
-      // Capital sheet data: Month, Tax Free, Taxable, Cash (first 4 columns)
-      var forecastRow = [row[0], row[1], row[2], row[3]];
-      if (row.occasionalIncomeComment) {
-        forecastRow.occasionalIncomeComment = row.occasionalIncomeComment;
-      }
+      // Capital sheet data: Month only (other columns will be empty)
+      var forecastRow = [row[0]];
       forecastSheetData.push(forecastRow);
       
-      // Income sheet data: Month + From Assets + pension columns + state pension columns
-      var incomeRow = [row[0]]; // Start with month
-      
-      // Calculate From Assets value for this specific month
-      // First calculate the underlying growth value (regardless of whether it will be shown)
-      var underlyingFromAssetsValue;
-      if (i === 0) {
-        underlyingFromAssetsValue = annualIncomeValue; // First month equals exact Annual Income
-      } else {
-        // Calculate value based on first month plus accumulated monthly inflation
-        underlyingFromAssetsValue = annualIncomeValue * Math.pow(1 + monthlyInflationRate, i);
-        underlyingFromAssetsValue = Math.round(underlyingFromAssetsValue * 100) / 100; // Round to 2 decimal places
-      }
-      
-      // Now check if this month should show zero due to Last Month of Income restriction
-      var originalFromAssetsValue;
-      if (latestLastMonthOfIncome) {
-        // Compare year and month only (ignore day)
-        var forecastYear = date.getFullYear();
-        var forecastMonth = date.getMonth();
-        var latestIncomeYear = latestLastMonthOfIncome.getFullYear();
-        var latestIncomeMonth = latestLastMonthOfIncome.getMonth();
-        
-        // If forecast month/year is <= latest income month/year, force to zero
-        if (forecastYear < latestIncomeYear || (forecastYear === latestIncomeYear && forecastMonth <= latestIncomeMonth)) {
-          originalFromAssetsValue = 0; // Force to zero for months before or equal to latest Last Month of Income
-        } else {
-          originalFromAssetsValue = underlyingFromAssetsValue; // Use calculated value for months after
-        }
-      } else {
-        // If no Last Month of Income data found, use calculated value for all months
-        originalFromAssetsValue = underlyingFromAssetsValue;
-      }
-      
-      // Calculate sum of all other income sources for this month
-      var otherIncomeSum = 0;
-      
-      // Add pension values and calculate their sum
-      for (var p = 0; p < pensionData.length; p++) {
-        var pensionValue = row[4 + p];
-        otherIncomeSum += pensionValue;
-      }
-      
-      // Add state pension values and calculate their sum
-      for (var sp = 0; sp < peopleData.length; sp++) {
-        var statePensionValue = row[4 + pensionData.length + sp];
-        otherIncomeSum += statePensionValue;
-      }
-      
-      // Calculate adjusted From Assets value (original - sum of other income sources)
-      var adjustedFromAssetsValue = originalFromAssetsValue - otherIncomeSum;
-      // Ensure it doesn't go below zero
-      if (adjustedFromAssetsValue < 0) {
-        adjustedFromAssetsValue = 0;
-      }
-      adjustedFromAssetsValue = Math.round(adjustedFromAssetsValue * 100) / 100; // Round to 2 decimal places
-      
-      // Add the adjusted From Assets value to the row
-      incomeRow.push(adjustedFromAssetsValue);
-      
-      // Add pension values (columns 4+ in original data)
-      for (var p = 0; p < pensionData.length; p++) {
-        incomeRow.push(row[4 + p]);
-      }
-      
-      // Add state pension values 
-      for (var sp = 0; sp < peopleData.length; sp++) {
-        incomeRow.push(row[4 + pensionData.length + sp]);
-      }
-      
+      // Income sheet data: Month only (other columns will be empty)
+      var incomeRow = [row[0]];
       incomeSheetData.push(incomeRow);
     }
     
-    // Write data to Capital sheet
-    forecastSheet.getRange(2, 1, forecastSheetData.length, forecastColumns).setValues(forecastSheetData);
+    // Write data to Capital sheet (only month column)
+    forecastSheet.getRange(2, 1, forecastSheetData.length, 1).setValues(forecastSheetData);
     
-    // Write data to Income sheet
-    incomeSheet.getRange(2, 1, incomeSheetData.length, incomeColumns).setValues(incomeSheetData);
+    // Write data to Income sheet (only month column)
+    incomeSheet.getRange(2, 1, incomeSheetData.length, 1).setValues(incomeSheetData);
     
-    // Add comments to Cash column cells that have occasional income
-    for (var i = 0; i < forecastSheetData.length; i++) {
-      if (forecastSheetData[i].occasionalIncomeComment) {
-        var cashCell = forecastSheet.getRange(i + 2, 4); // Row i+2 (since we start from row 2), column 4 (Cash column)
-        cashCell.setNote(forecastSheetData[i].occasionalIncomeComment);
+    // Set Final Salary Pension values based on First Month matching
+    for (var p = 0; p < pensionData.length; p++) {
+      var pension = pensionData[p];
+      var pensionColumnIndex = 3 + p; // Pension columns start at column 3 (after Month and From Assets)
+      
+      var pensionStartFound = false;
+      var currentPensionValue = pension.monthlyIncome;
+      
+      // Process all forecast months for this pension
+      for (var i = 0; i < forecastData.length; i++) {
+        var forecastDate = new Date(startDate);
+        forecastDate.setMonth(startDate.getMonth() + i);
+        
+        // Check if forecast month/year is before pension first month/year
+        if (forecastDate.getFullYear() < pension.firstMonth.getFullYear() || 
+            (forecastDate.getFullYear() === pension.firstMonth.getFullYear() && 
+             forecastDate.getMonth() < pension.firstMonth.getMonth())) {
+          // Set to zero for months before pension starts
+          incomeSheet.getRange(i + 2, pensionColumnIndex).setValue(0);
+        }
+        // Check if forecast month/year matches pension first month/year
+        else if (forecastDate.getFullYear() === pension.firstMonth.getFullYear() && 
+                 forecastDate.getMonth() === pension.firstMonth.getMonth()) {
+          // First month - use original value
+          incomeSheet.getRange(i + 2, pensionColumnIndex).setValue(currentPensionValue);
+          pensionStartFound = true;
+        }
+        // For months after pension starts
+        else if (pensionStartFound) {
+          // Apply monthly inflation growth
+          currentPensionValue = Math.round((currentPensionValue * (1 + monthlyInflationRate)) * 100) / 100;
+          incomeSheet.getRange(i + 2, pensionColumnIndex).setValue(currentPensionValue);
+        }
       }
     }
     
-    // Format currency columns for Capital sheet (columns B, C, D)
-    forecastSheet.getRange(2, 2, forecastSheetData.length, 3).setNumberFormat('£#,##0.00');
-    forecastSheet.getRange(2, 2, forecastSheetData.length, 3).setHorizontalAlignment('center');
-    
-    // Format currency columns for Income sheet (all columns except Month)
-    if (incomeColumns > 1) {
-      incomeSheet.getRange(2, 2, incomeSheetData.length, incomeColumns - 1).setNumberFormat('£#,##0.00');
-      incomeSheet.getRange(2, 2, incomeSheetData.length, incomeColumns - 1).setHorizontalAlignment('center');
+    // Format pension columns as currency on Income sheet
+    for (var p = 0; p < pensionData.length; p++) {
+      var pensionColumnIndex = 3 + p;
+      incomeSheet.getRange(2, pensionColumnIndex, forecastData.length, 1).setNumberFormat('£#,##0.00');
+      incomeSheet.getRange(2, pensionColumnIndex, forecastData.length, 1).setHorizontalAlignment('center');
     }
+    
+    // Set Stocks & Shares Tax Free for first month using totalTaxFree value
+    forecastSheet.getRange(2, 2).setValue(totalTaxFree);
+    
+    // Set Stocks & Shares Taxable for first month using totalTaxable value
+    forecastSheet.getRange(2, 3).setValue(totalTaxable);
+    
+    // Set Cash for first month using totalCash value
+    forecastSheet.getRange(2, 4).setValue(totalCash);
+    
+    // Format the cells as currency
+    forecastSheet.getRange(2, 2).setNumberFormat('£#,##0.00');
+    forecastSheet.getRange(2, 2).setHorizontalAlignment('center');
+    forecastSheet.getRange(2, 3).setNumberFormat('£#,##0.00');
+    forecastSheet.getRange(2, 3).setHorizontalAlignment('center');
+    forecastSheet.getRange(2, 4).setNumberFormat('£#,##0.00');
+    forecastSheet.getRange(2, 4).setHorizontalAlignment('center');
   }
   
   // Show completion message
@@ -595,9 +465,5 @@ function createMonthsList() {
   SpreadsheetApp.getUi().alert('Forecast plan created successfully!\n\nGenerated ' + forecastData.length + ' months from ' + 
                               monthNames[startDate.getMonth()] + ' ' + startDate.getFullYear() + 
                               ' to ' + monthNames[endDate.getMonth()] + ' ' + endDate.getFullYear() + 
-                              '\n\nStarting values:\nTax Free: £' + totalTaxFree.toFixed(2) + 
-                              '\nTaxable: £' + totalTaxable.toFixed(2) + 
-                              '\nCash: £' + totalCash.toFixed(2) + 
-                              '\n\nGrowth rates:\nStocks & Shares: ' + (monthlyStocksGrowthRate * 100).toFixed(3) + '% monthly' +
-                              '\nCash: ' + (monthlyCashGrowthRate * 100).toFixed(3) + '% monthly');
+                              '\n\nCapital and Income sheets have been created with month rows and column headers.');
 }
