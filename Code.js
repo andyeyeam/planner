@@ -203,42 +203,45 @@ function createMonthsList() {
     }
   }
   
-  // Get Retirement Income sheet to find Annual Income property
+  // Get Retirement Income sheet to find Annual Income property and last year to increase
   var retirementIncomeSheet = ss.getSheetByName('Retirement Income');
   var annualIncomeValue = 0;
+  var lastYearToIncreaseIncome = null;
   if (retirementIncomeSheet) {
-    // Search for Annual Income property in Retirement Income sheet
+    // Search for Annual Income property and Last year to increase income by inflation percentage in Retirement Income sheet
     var retirementIncomeData = retirementIncomeSheet.getRange('A:B').getValues();
     for (var i = 0; i < retirementIncomeData.length; i++) {
       if (retirementIncomeData[i][0]) {
         var propertyName = retirementIncomeData[i][0].toString().toLowerCase();
         if (propertyName.includes('annual income')) {
           annualIncomeValue = retirementIncomeData[i][1] || 0;
-          break;
+        }
+        if (propertyName.includes('last year to increase income by inflation percentage')) {
+          lastYearToIncreaseIncome = retirementIncomeData[i][1];
         }
       }
     }
   }
 
-  // Get Occasional Income sheet data
-  var occasionalIncomeSheet = ss.getSheetByName('Occasional Income');
-  if (!occasionalIncomeSheet) {
-    SpreadsheetApp.getUi().alert('Occasional Income sheet not found!');
+  // Get Occasional Expenditure sheet data
+  var occasionalExpenditureSheet = ss.getSheetByName('Occasional Expenditure');
+  if (!occasionalExpenditureSheet) {
+    SpreadsheetApp.getUi().alert('Occasional Expenditure sheet not found!');
     return;
   }
   
-  // Get occasional income data (A = title, B = value, C = month)
-  var occasionalIncomeData = [];
-  var occasionalLastRow = occasionalIncomeSheet.getLastRow();
+  // Get occasional expenditure data (A = title, B = value, C = month)
+  var occasionalExpenditureData = [];
+  var occasionalLastRow = occasionalExpenditureSheet.getLastRow();
   if (occasionalLastRow >= 2) {
-    var occasionalRange = occasionalIncomeSheet.getRange('A2:C' + occasionalLastRow).getValues();
+    var occasionalRange = occasionalExpenditureSheet.getRange('A2:C' + occasionalLastRow).getValues();
     for (var i = 0; i < occasionalRange.length; i++) {
       var title = occasionalRange[i][0];
       var value = occasionalRange[i][1];
       var month = occasionalRange[i][2];
       
       if (title && title.toString().trim() !== '') {
-        occasionalIncomeData.push({
+        occasionalExpenditureData.push({
           title: title.toString(),
           value: Number(value) || 0,
           month: new Date(month)
@@ -292,8 +295,8 @@ function createMonthsList() {
   incomeSheet.getRange('A1').setValue('Month');
   var incomeColIndex = 2;
   
-  // Add From Assets column header to Income sheet
-  incomeSheet.getRange(1, incomeColIndex).setValue('From Assets');
+  // Add Target Income column header to Income sheet
+  incomeSheet.getRange(1, incomeColIndex).setValue('Target Income');
   incomeColIndex++;
   
   // Add pension column headers to Income sheet
@@ -320,7 +323,7 @@ function createMonthsList() {
   forecastHeaderRange.setWrap(true);
   
   // Format header row for Income sheet 
-  var incomeColumns = 1 + 1 + pensionData.length + peopleData.length; // Month + From Assets + Pensions + State Pensions
+  var incomeColumns = 1 + 1 + pensionData.length + peopleData.length; // Month + Target Income + Pensions + State Pensions
   var incomeHeaderRange = incomeSheet.getRange(1, 1, 1, incomeColumns);
   incomeHeaderRange.setFontWeight('bold');
   incomeHeaderRange.setFontSize(12);
@@ -333,11 +336,11 @@ function createMonthsList() {
   forecastSheet.setColumnWidth(1, 150); // Month column
   forecastSheet.setColumnWidth(2, 200); // Stocks & Shares Tax Free column  
   forecastSheet.setColumnWidth(3, 200); // Stocks & Shares Taxable column
-  forecastSheet.setColumnWidth(4, 150); // Cash column (now includes occasional income)
+  forecastSheet.setColumnWidth(4, 150); // Cash column
   
   // Set column widths for Income sheet
   incomeSheet.setColumnWidth(1, 150); // Month column
-  incomeSheet.setColumnWidth(2, 150); // From Assets column
+  incomeSheet.setColumnWidth(2, 150); // Target Income column
   var incomeColIndex = 3;
   
   // Set column widths for pension columns in Income sheet
@@ -360,7 +363,7 @@ function createMonthsList() {
   
   // Clear existing data (except headers) for both sheets
   var forecastColumns = 4;
-  var incomeColumns = 1 + 1 + pensionData.length + peopleData.length; // Month + From Assets + Pensions + State Pensions
+  var incomeColumns = 1 + 1 + pensionData.length + peopleData.length; // Month + Target Income + Pensions + State Pensions
   
   if (forecastSheet.getLastRow() > 1) {
     var forecastClearRange = forecastSheet.getRange(2, 1, forecastSheet.getLastRow() - 1, forecastColumns);
@@ -401,7 +404,7 @@ function createMonthsList() {
     // Set Final Salary Pension values based on First Month matching
     for (var p = 0; p < pensionData.length; p++) {
       var pension = pensionData[p];
-      var pensionColumnIndex = 3 + p; // Pension columns start at column 3 (after Month and From Assets)
+      var pensionColumnIndex = 3 + p; // Pension columns start at column 3 (after Month and Target Income)
       
       var pensionStartFound = false;
       var currentPensionValue = pension.monthlyIncome;
@@ -506,6 +509,80 @@ function createMonthsList() {
       incomeSheet.getRange(2, pensionColumnIndex, forecastData.length, 1).setHorizontalAlignment('center');
     }
     
+    // Set Target Income values based on retirement start date
+    var retirementStartDate = null;
+    
+    // Find the latest "Last Month of Income" date from People sheet (column E)
+    if (latestLastMonthOfIncome) {
+      retirementStartDate = new Date(latestLastMonthOfIncome);
+      retirementStartDate.setMonth(retirementStartDate.getMonth() + 1); // Retirement starts the month after last income
+    }
+    
+    if (retirementStartDate && annualIncomeValue > 0) {
+      var retirementStartFound = false;
+      var currentTargetIncome = annualIncomeValue / 12; // Convert annual to monthly
+      var aprilsEncountered = 0;
+      
+      // First pass: Count Aprils before retirement starts to adjust initial value
+      for (var i = 0; i < forecastData.length; i++) {
+        var forecastDate = new Date(startDate);
+        forecastDate.setMonth(startDate.getMonth() + i);
+        
+        // Check if this month is before retirement starts
+        if (forecastDate.getFullYear() < retirementStartDate.getFullYear() || 
+            (forecastDate.getFullYear() === retirementStartDate.getFullYear() && 
+             forecastDate.getMonth() < retirementStartDate.getMonth())) {
+          // Count Aprils before retirement starts
+          if (forecastDate.getMonth() === 3) { // April is month 3 (0-indexed)
+            aprilsEncountered++;
+          }
+        } else {
+          break; // Stop counting once we reach retirement start
+        }
+      }
+      
+      // Adjust initial target income based on Aprils encountered before retirement starts
+      var adjustedTargetIncome = currentTargetIncome * Math.pow(1 + annualInflationRate, aprilsEncountered);
+      adjustedTargetIncome = Math.round(adjustedTargetIncome * 100) / 100;
+      currentTargetIncome = adjustedTargetIncome;
+      
+      // Process all forecast months for Target Income
+      for (var i = 0; i < forecastData.length; i++) {
+        var forecastDate = new Date(startDate);
+        forecastDate.setMonth(startDate.getMonth() + i);
+        
+        // Check if forecast month/year is before retirement start month/year
+        if (forecastDate.getFullYear() < retirementStartDate.getFullYear() || 
+            (forecastDate.getFullYear() === retirementStartDate.getFullYear() && 
+             forecastDate.getMonth() < retirementStartDate.getMonth())) {
+          // Set to zero for months before retirement starts
+          incomeSheet.getRange(i + 2, 2).setValue(0);
+        }
+        // Check if forecast month/year matches retirement start month/year
+        else if (forecastDate.getFullYear() === retirementStartDate.getFullYear() && 
+                 forecastDate.getMonth() === retirementStartDate.getMonth()) {
+          // First retirement month - use adjusted target income
+          incomeSheet.getRange(i + 2, 2).setValue(currentTargetIncome);
+          retirementStartFound = true;
+        }
+        // For months after retirement starts
+        else if (retirementStartFound) {
+          // Check if this is April - apply annual inflation increase only if we haven't passed the last year to increase
+          if (forecastDate.getMonth() === 3) { // April is month 3 (0-indexed)
+            // Only apply inflation if we're still within the "last year to increase income" period
+            if (!lastYearToIncreaseIncome || forecastDate.getFullYear() <= lastYearToIncreaseIncome) {
+              currentTargetIncome = Math.round((currentTargetIncome * (1 + annualInflationRate)) * 100) / 100;
+            }
+          }
+          incomeSheet.getRange(i + 2, 2).setValue(currentTargetIncome);
+        }
+      }
+    }
+    
+    // Format Target Income column as currency
+    incomeSheet.getRange(2, 2, forecastData.length, 1).setNumberFormat('£#,##0.00');
+    incomeSheet.getRange(2, 2, forecastData.length, 1).setHorizontalAlignment('center');
+    
     // Format state pension columns as currency on Income sheet
     for (var sp = 0; sp < peopleData.length; sp++) {
       var statePensionColumnIndex = 3 + pensionData.length + sp;
@@ -513,29 +590,52 @@ function createMonthsList() {
       incomeSheet.getRange(2, statePensionColumnIndex, forecastData.length, 1).setHorizontalAlignment('center');
     }
     
-    // Set Stocks & Shares Tax Free for first month using totalTaxFree value
-    forecastSheet.getRange(2, 2).setValue(totalTaxFree);
-    
-    // Set Stocks & Shares Taxable for first month using totalTaxable value
-    forecastSheet.getRange(2, 3).setValue(totalTaxable);
-    
-    // Set Cash for first month using totalCash value
-    forecastSheet.getRange(2, 4).setValue(totalCash);
+    // Calculate and set Cash and Stocks & Shares values with growth up to last month of income
+    if (latestLastMonthOfIncome) {
+      var currentTaxFreeValue = totalTaxFree;
+      var currentTaxableValue = totalTaxable;
+      var currentCashValue = totalCash;
+      
+      for (var i = 0; i < forecastData.length; i++) {
+        var forecastDate = new Date(startDate);
+        forecastDate.setMonth(startDate.getMonth() + i);
+        
+        // Check if we're still within the income earning period
+        if (forecastDate.getFullYear() < latestLastMonthOfIncome.getFullYear() || 
+            (forecastDate.getFullYear() === latestLastMonthOfIncome.getFullYear() && 
+             forecastDate.getMonth() <= latestLastMonthOfIncome.getMonth())) {
+          
+          // For the first month, use starting values
+          if (i === 0) {
+            forecastSheet.getRange(i + 2, 2).setValue(currentTaxFreeValue);
+            forecastSheet.getRange(i + 2, 3).setValue(currentTaxableValue);
+            forecastSheet.getRange(i + 2, 4).setValue(currentCashValue);
+          } else {
+            // Apply monthly growth to previous month's values
+            currentTaxFreeValue = Math.round((currentTaxFreeValue * (1 + monthlyStocksGrowthRate)) * 100) / 100;
+            currentTaxableValue = Math.round((currentTaxableValue * (1 + monthlyStocksGrowthRate)) * 100) / 100;
+            currentCashValue = Math.round((currentCashValue * (1 + monthlyCashGrowthRate)) * 100) / 100;
+            
+            forecastSheet.getRange(i + 2, 2).setValue(currentTaxFreeValue);
+            forecastSheet.getRange(i + 2, 3).setValue(currentTaxableValue);
+            forecastSheet.getRange(i + 2, 4).setValue(currentCashValue);
+          }
+        } else {
+          // After last month of income, keep the values constant
+          forecastSheet.getRange(i + 2, 2).setValue(currentTaxFreeValue);
+          forecastSheet.getRange(i + 2, 3).setValue(currentTaxableValue);
+          forecastSheet.getRange(i + 2, 4).setValue(currentCashValue);
+        }
+      }
+    }
     
     // Format the cells as currency
-    forecastSheet.getRange(2, 2).setNumberFormat('£#,##0.00');
-    forecastSheet.getRange(2, 2).setHorizontalAlignment('center');
-    forecastSheet.getRange(2, 3).setNumberFormat('£#,##0.00');
-    forecastSheet.getRange(2, 3).setHorizontalAlignment('center');
-    forecastSheet.getRange(2, 4).setNumberFormat('£#,##0.00');
-    forecastSheet.getRange(2, 4).setHorizontalAlignment('center');
+    forecastSheet.getRange(2, 2, forecastData.length, 1).setNumberFormat('£#,##0.00');
+    forecastSheet.getRange(2, 2, forecastData.length, 1).setHorizontalAlignment('center');
+    forecastSheet.getRange(2, 3, forecastData.length, 1).setNumberFormat('£#,##0.00');
+    forecastSheet.getRange(2, 3, forecastData.length, 1).setHorizontalAlignment('center');
+    forecastSheet.getRange(2, 4, forecastData.length, 1).setNumberFormat('£#,##0.00');
+    forecastSheet.getRange(2, 4, forecastData.length, 1).setHorizontalAlignment('center');
   }
   
-  // Show completion message
-  var monthNames = ["January", "February", "March", "April", "May", "June",
-                   "July", "August", "September", "October", "November", "December"];
-  SpreadsheetApp.getUi().alert('Forecast plan created successfully!\n\nGenerated ' + forecastData.length + ' months from ' + 
-                              monthNames[startDate.getMonth()] + ' ' + startDate.getFullYear() + 
-                              ' to ' + monthNames[endDate.getMonth()] + ' ' + endDate.getFullYear() + 
-                              '\n\nCapital and Income sheets have been created with month rows and column headers.');
 }
