@@ -351,7 +351,7 @@ function createMonthsList() {
     
     // Store occasional income info for this row to add comments later
     if (occasionalIncomeValue > 0) {
-      rowData.occasionalIncomeComment = occasionalIncomeTitles.join(', ');
+      rowData.occasionalIncomeComment = occasionalIncomeTitles.join(', ') + ' (£' + occasionalIncomeValue.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ')';
     }
     
     // Add state pension values for each person
