@@ -434,11 +434,83 @@ function createMonthsList() {
       }
     }
     
+    // Set State Pension values for each person based on age 67
+    for (var sp = 0; sp < peopleData.length; sp++) {
+      var person = peopleData[sp];
+      var statePensionColumnIndex = 3 + pensionData.length + sp; // State pension columns come after pension columns
+      
+      // Calculate 67th birthday
+      var statePensionAge = new Date(person.birthDate.getFullYear() + 67, person.birthDate.getMonth(), person.birthDate.getDate());
+      
+      var statePensionStartFound = false;
+      var currentStatePensionValue = currentStatePension;
+      var aprilsEncountered = 0;
+      
+      // First pass: Count Aprils before pension starts to adjust initial value
+      for (var i = 0; i < forecastData.length; i++) {
+        var forecastDate = new Date(startDate);
+        forecastDate.setMonth(startDate.getMonth() + i);
+        
+        // Check if this month is before pension starts
+        if (forecastDate.getFullYear() < statePensionAge.getFullYear() || 
+            (forecastDate.getFullYear() === statePensionAge.getFullYear() && 
+             forecastDate.getMonth() < statePensionAge.getMonth())) {
+          // Count Aprils before pension starts
+          if (forecastDate.getMonth() === 3) { // April is month 3 (0-indexed)
+            aprilsEncountered++;
+          }
+        } else {
+          break; // Stop counting once we reach pension start
+        }
+      }
+      
+      // Adjust initial pension value based on Aprils encountered before pension starts
+      var adjustedStatePensionValue = currentStatePension * Math.pow(1 + annualInflationRate, aprilsEncountered);
+      adjustedStatePensionValue = Math.round(adjustedStatePensionValue * 100) / 100;
+      currentStatePensionValue = adjustedStatePensionValue;
+      
+      // Process all forecast months for this person's state pension
+      for (var i = 0; i < forecastData.length; i++) {
+        var forecastDate = new Date(startDate);
+        forecastDate.setMonth(startDate.getMonth() + i);
+        
+        // Check if forecast month/year is before person's 67th birthday month/year
+        if (forecastDate.getFullYear() < statePensionAge.getFullYear() || 
+            (forecastDate.getFullYear() === statePensionAge.getFullYear() && 
+             forecastDate.getMonth() < statePensionAge.getMonth())) {
+          // Set to zero for months before state pension starts
+          incomeSheet.getRange(i + 2, statePensionColumnIndex).setValue(0);
+        }
+        // Check if forecast month/year matches state pension start month/year
+        else if (forecastDate.getFullYear() === statePensionAge.getFullYear() && 
+                 forecastDate.getMonth() === statePensionAge.getMonth()) {
+          // First month - use adjusted state pension value
+          incomeSheet.getRange(i + 2, statePensionColumnIndex).setValue(currentStatePensionValue);
+          statePensionStartFound = true;
+        }
+        // For months after state pension starts
+        else if (statePensionStartFound) {
+          // Check if this is April - apply annual inflation increase
+          if (forecastDate.getMonth() === 3) { // April is month 3 (0-indexed)
+            currentStatePensionValue = Math.round((currentStatePensionValue * (1 + annualInflationRate)) * 100) / 100;
+          }
+          incomeSheet.getRange(i + 2, statePensionColumnIndex).setValue(currentStatePensionValue);
+        }
+      }
+    }
+    
     // Format pension columns as currency on Income sheet
     for (var p = 0; p < pensionData.length; p++) {
       var pensionColumnIndex = 3 + p;
       incomeSheet.getRange(2, pensionColumnIndex, forecastData.length, 1).setNumberFormat('£#,##0.00');
       incomeSheet.getRange(2, pensionColumnIndex, forecastData.length, 1).setHorizontalAlignment('center');
+    }
+    
+    // Format state pension columns as currency on Income sheet
+    for (var sp = 0; sp < peopleData.length; sp++) {
+      var statePensionColumnIndex = 3 + pensionData.length + sp;
+      incomeSheet.getRange(2, statePensionColumnIndex, forecastData.length, 1).setNumberFormat('£#,##0.00');
+      incomeSheet.getRange(2, statePensionColumnIndex, forecastData.length, 1).setHorizontalAlignment('center');
     }
     
     // Set Stocks & Shares Tax Free for first month using totalTaxFree value
